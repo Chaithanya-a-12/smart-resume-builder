@@ -1,0 +1,101 @@
+// server.js
+
+const express = require("express");
+const mongoose = require("mongoose");
+const cors = require("cors");
+const PDFDocument = require("pdfkit");
+const { OpenAI } = require("openai");
+
+const app = express();
+app.use(express.json());
+app.use(cors());
+
+// MongoDB Connection
+mongoose.connect("mongodb://127.0.0.1:27017/resumebuilder");
+
+const ResumeSchema = new mongoose.Schema({
+  name: String,
+  email: String,
+  phone: String,
+  skills: String,
+  education: String,
+  experience: String,
+});
+
+const Resume = mongoose.model("Resume", ResumeSchema);
+
+// OpenAI API Key
+const openai = new OpenAI({
+  apiKey: "YOUR_OPENAI_API_KEY",
+});
+
+// Save Resume
+app.post("/resume", async (req, res) => {
+  try {
+    const resume = await Resume.create(req.body);
+    res.json(resume);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// AI Suggestions
+app.post("/ai-suggestions", async (req, res) => {
+  try {
+    const prompt = `
+      Review this resume and give improvement suggestions:
+      ${JSON.stringify(req.body)}
+    `;
+
+    const response = await openai.chat.completions.create({
+      model: "gpt-3.5-turbo",
+      messages: [{ role: "user", content: prompt }],
+    });
+
+    res.json({
+      suggestions: response.choices[0].message.content,
+    });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// PDF Export
+app.post("/export-pdf", (req, res) => {
+  const doc = new PDFDocument();
+
+  res.setHeader(
+    "Content-Disposition",
+    "attachment; filename=resume.pdf"
+  );
+
+  res.setHeader("Content-Type", "application/pdf");
+
+  doc.pipe(res);
+
+  doc.fontSize(24).text(req.body.name, {
+    align: "center",
+  });
+
+  doc.moveDown();
+  doc.fontSize(12).text(`Email: ${req.body.email}`);
+  doc.text(`Phone: ${req.body.phone}`);
+
+  doc.moveDown();
+  doc.fontSize(16).text("Skills");
+  doc.fontSize(12).text(req.body.skills);
+
+  doc.moveDown();
+  doc.fontSize(16).text("Education");
+  doc.fontSize(12).text(req.body.education);
+
+  doc.moveDown();
+  doc.fontSize(16).text("Experience");
+  doc.fontSize(12).text(req.body.experience);
+
+  doc.end();
+});
+
+app.listen(5000, () => {
+  console.log("Server running on port 5000");
+});
